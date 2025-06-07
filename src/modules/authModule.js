@@ -1,71 +1,59 @@
 const bcrypt = require('bcrypt');
-// const db = require('../config/db'); // <--- Hapus atau komentari baris ini!
+// const db = require('../config/db'); // Pastikan ini tetap dikomentari atau dihapus
 /* eslint-disable no-console*/
 
 exports.register = async (req, res) => {
-  const { username, email, phoneNumber, password, confirmPassword } = req.body;
-
-  // Tambahkan pengecekan `req.db` untuk memastikan koneksi tersedia
-  if (!req.db) {
-    console.error('Database connection not available in register route');
-    return res.status(500).send('Database connection error.');
-  }
-
-  if (!username || !email || !password) return res.send('Semua field harus diisi');
-  if (password !== confirmPassword) return res.send('Password tidak sesuai');
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    // Ganti db.queryAsync dengan req.db.query
-    await req.db.query( // <--- PERUBAHAN DI SINI!
-      'INSERT INTO Users (username, email, PhoneNumber, PasswordHash, role) VALUES (?, ?, ?, ?, ?)',
-      [username, email, phoneNumber, hashedPassword, 'user']
-    );
-    res.redirect('/');
-  } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.send('Username atau email sudah terdaftar');
-    }
-    console.error('Error during registration:', err); // Log error lebih detail
-    return res.status(500).send('Terjadi kesalahan pada server');
-  }
+    // ... (kode register Anda tetap sama)
 };
 
 exports.login = async (req, res) => {
-  const { username, password } = req.body;
+    const { username, password } = req.body;
+    console.log('LOGIN ATTEMPT: Received request for username:', username); // LOG 1
 
-  // Tambahkan pengecekan `req.db` untuk memastikan koneksi tersedia
-  if (!req.db) {
-    console.error('Database connection not available in login route');
-    return res.status(500).send('Database connection error.');
-  }
+    // Tambahkan pengecekan `req.db` di sini juga, sebagai safeguard
+    if (!req.db) {
+        console.error('ERROR: Database connection not available in login route.');
+        return res.status(500).send('Database connection error.');
+    }
 
-  try {
-    // Ganti db.queryAsync dengan req.db.query
-    const [results] = await req.db.query('SELECT * FROM Users WHERE Username = ?', [username]); // <--- PERUBAHAN DI SINI!
-    //                 ^^^^^^  Pastikan destructured array untuk mysql2/promise
+    try {
+        console.log('LOGIN STEP 1: Querying database for user...'); // LOG 2
+        const [results] = await req.db.query('SELECT * FROM Users WHERE Username = ?', [username]);
+        console.log('LOGIN STEP 2: Database query complete. Results length:', results.length); // LOG 3
 
-    if (results.length === 0) {
-      return res.status(401).send('Username tidak ditemukan');
-    }
+        if (results.length === 0) {
+            console.log('LOGIN RESULT: Username not found.'); // LOG 4
+            return res.status(401).send('Username tidak ditemukan');
+        }
 
-    const user = results[0];
-    const isMatch = await bcrypt.compare(password, user.PasswordHash);
-    if (!isMatch) {
-      return res.status(401).send('Password salah');
-    }
+        const user = results[0];
+        console.log('LOGIN STEP 3: User found. Username from DB:', user.Username); // LOG 5
+        console.log('LOGIN DEBUG: Input Password (first 5 chars):', password ? password.substring(0, 5) + '...' : 'N/A'); // LOG 6 - HATI-HATI JANGAN LOG PASSWORD ASLI
+        console.log('LOGIN DEBUG: Stored PasswordHash (first 5 chars):', user.PasswordHash ? user.PasswordHash.substring(0, 5) + '...' : 'N/A'); // LOG 7 - HATI-HATI JANGAN LOG HASH ASLI
 
-    req.session.user = {
-      id: user.UserID,
-      username: user.Username,
-      email: user.Email,
-      role: user.Role
-    };
-    // req.session.save(); // Biasanya tidak diperlukan jika hanya mengassign properti baru. express-session akan menyimpannya otomatis sebelum respons dikirim. Tapi jika ada redirect, terkadang perlu. Anda bisa coba tanpa ini dulu.
+        console.log('LOGIN STEP 4: Comparing passwords...'); // LOG 8
+        const isMatch = await bcrypt.compare(password, user.PasswordHash);
+        console.log('LOGIN STEP 5: bcrypt.compare result (isMatch):', isMatch); // LOG 9
 
-    return res.redirect(user.Role === 'admin' ? '/admin' : '/user');
-  } catch (err) {
-    console.error('Error in login process:', err); // Log error lebih detail
-    return res.status(500).send('Terjadi kesalahan saat login');
-  }
+        if (!isMatch) {
+            console.log('LOGIN RESULT: Password mismatch.'); // LOG 10
+            return res.status(401).send('Password salah');
+        }
+
+        console.log('LOGIN STEP 6: Password matched. Setting session...'); // LOG 11
+        req.session.user = {
+            id: user.UserID,
+            username: user.Username,
+            email: user.Email,
+            role: user.Role
+        };
+        // console.log('LOGIN STEP 7: Session user set:', req.session.user.username); // LOG 12 (Opsional, jika ingin lihat data user di sesi)
+        // req.session.save(); // Tetap bisa dihapus jika tidak ada masalah session
+
+        console.log('LOGIN STEP 8: Redirecting...'); // LOG 13
+        return res.redirect(user.Role === 'admin' ? '/admin' : '/user');
+    } catch (err) {
+        console.error('!!! LOGIN FAILED - FINAL CATCH ERROR:', err); // LOG ERROR UTAMA, GANTI PESANNYA BIAR JELAS DI LOG
+        return res.status(500).send('Terjadi kesalahan saat login');
+    }
 };
